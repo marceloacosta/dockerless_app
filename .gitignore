@@ -27,6 +27,7 @@ __pycache__/
 .pytest_cache/
 venv/
 env/
+.venv/
 
 # Build artifacts
 dist/
