@@ -86,7 +86,7 @@ def fetch_transcript(video_url):
         video_url: YouTube video URL
     
     Returns:
-        list: Transcript entries with 'text', 'start', and 'duration' fields
+        list: Transcript entries (FetchedTranscriptSnippet objects with text, start, duration attributes)
         
     Raises:
         ValueError: If video ID cannot be extracted
@@ -102,8 +102,11 @@ def fetch_transcript(video_url):
     logger.info(f"Fetching transcript for video_id={video_id}")
     
     try:
-        # Fetch transcript (prefers English, falls back to available languages)
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        # Create API instance
+        api = YouTubeTranscriptApi()
+        
+        # Fetch transcript list (prefers English, falls back to available languages)
+        transcript_list = api.list(video_id)
         
         # Try to get English transcript first
         try:
@@ -160,8 +163,8 @@ def process_message(message_body):
             transcript_data = fetch_transcript(video_url)
             logger.info(f"Successfully fetched transcript: {len(transcript_data)} entries")
             
-            # Calculate total text length
-            total_text = ' '.join([entry['text'] for entry in transcript_data])
+            # Calculate total text length (transcript entries have .text attribute)
+            total_text = ' '.join([entry.text for entry in transcript_data])
             logger.info(f"Transcript total length: {len(total_text)} characters")
             
         except (ValueError, TranscriptsDisabled, NoTranscriptFound, VideoUnavailable) as e:
