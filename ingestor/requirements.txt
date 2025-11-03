@@ -1,0 +1,12 @@
+# AWS SDK
+boto3>=1.34.0
+
+# YouTube transcript fetching
+youtube-transcript-api>=0.6.2
+
+# Fallback: audio download and processing
+yt-dlp>=2024.3.10
+
+# Text processing
+tiktoken>=0.6.0
+
