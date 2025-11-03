@@ -22,8 +22,15 @@ import signal
 import time
 import logging
 import json
+import re
 import boto3
 from botocore.exceptions import ClientError
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable
+)
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +49,88 @@ def signal_handler(signum, frame):
     global running
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     running = False
+
+
+def extract_video_id(url):
+    """
+    Extract YouTube video ID from URL.
+    
+    Supports formats:
+    - https://www.youtube.com/watch?v=VIDEO_ID
+    - https://youtu.be/VIDEO_ID
+    - https://www.youtube.com/embed/VIDEO_ID
+    
+    Args:
+        url: YouTube URL string
+    
+    Returns:
+        str: Video ID or None if not found
+    """
+    patterns = [
+        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    
+    return None
+
+
+def fetch_transcript(video_url):
+    """
+    Fetch transcript for a YouTube video.
+    
+    Args:
+        video_url: YouTube video URL
+    
+    Returns:
+        list: Transcript entries with 'text', 'start', and 'duration' fields
+        
+    Raises:
+        ValueError: If video ID cannot be extracted
+        TranscriptsDisabled: If transcripts are disabled for the video
+        NoTranscriptFound: If no transcript is available
+        VideoUnavailable: If video is private or unavailable
+    """
+    video_id = extract_video_id(video_url)
+    
+    if not video_id:
+        raise ValueError(f"Could not extract video ID from URL: {video_url}")
+    
+    logger.info(f"Fetching transcript for video_id={video_id}")
+    
+    try:
+        # Fetch transcript (prefers English, falls back to available languages)
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        
+        # Try to get English transcript first
+        try:
+            transcript = transcript_list.find_transcript(['en'])
+            transcript_data = transcript.fetch()
+            logger.info(f"Fetched English transcript: {len(transcript_data)} entries")
+        except NoTranscriptFound:
+            # Fall back to any available transcript
+            logger.info("No English transcript, using first available")
+            transcript = transcript_list.find_generated_transcript(['en'])
+            transcript_data = transcript.fetch()
+            logger.info(f"Fetched generated transcript: {len(transcript_data)} entries")
+        
+        return transcript_data
+        
+    except TranscriptsDisabled:
+        logger.error(f"Transcripts are disabled for video: {video_id}")
+        raise
+    except NoTranscriptFound:
+        logger.error(f"No transcript found for video: {video_id}")
+        raise
+    except VideoUnavailable:
+        logger.error(f"Video unavailable or private: {video_id}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error fetching transcript: {e}", exc_info=True)
+        raise
 
 
 def process_message(message_body):
@@ -66,7 +155,19 @@ def process_message(message_body):
         
         logger.info(f"Processing video_url={video_url}, collection_id={collection_id}")
         
-        # TODO: Implement transcript fetching
+        # Step 1: Fetch transcript
+        try:
+            transcript_data = fetch_transcript(video_url)
+            logger.info(f"Successfully fetched transcript: {len(transcript_data)} entries")
+            
+            # Calculate total text length
+            total_text = ' '.join([entry['text'] for entry in transcript_data])
+            logger.info(f"Transcript total length: {len(total_text)} characters")
+            
+        except (ValueError, TranscriptsDisabled, NoTranscriptFound, VideoUnavailable) as e:
+            logger.error(f"Failed to fetch transcript for {video_url}: {e}")
+            return False
+        
         # TODO: Implement text chunking
         # TODO: Implement embedding generation
         # TODO: Implement vector storage
