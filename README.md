@@ -4,6 +4,8 @@
 
 This repository demonstrates how to build production-ready OCI (Open Container Initiative) containers completely by hand, without using Docker. It's an educational journey into container internals that resulted in a fully functional, deployed application on AWS ECS.
 
+**Read the full story**: [Beyond Docker: Understanding Containers from the Inside Out](https://buildwithaws.substack.com/p/beyond-docker-understanding-containers) - A narrative walkthrough of the entire process, from motivation to deployment.
+
 ## What This Project Teaches
 
 - **Container internals**: What's actually inside a container image (layers, config, manifest)
@@ -396,13 +398,6 @@ Common issues:
 ## License
 
 MIT License - Feel free to use this for learning and teaching!
-
-## Acknowledgments
-
-Inspired by:
-- Julia Evans' zines on debugging and systems
-- Jessie Frazelle's container security work
-- Kelsey Hightower's "Kubernetes the Hard Way"
 
 ---
 
