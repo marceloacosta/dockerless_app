@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Q&A - AI-Powered Video Analysis</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 YouTube Q&A</h1>
+            <p class="subtitle">AI-Powered Video Transcript Analysis</p>
+        </header>
+
+        <main>
+            <!-- Ingest Section -->
+            <section class="card">
+                <h2>📤 Add YouTube Video</h2>
+                <p class="help-text">Submit a YouTube URL to index its transcript for Q&A</p>
+                
+                <form id="ingest-form">
+                    <div class="form-group">
+                        <label for="video-url">YouTube URL:</label>
+                        <input 
+                            type="text" 
+                            id="video-url" 
+                            placeholder="https://www.youtube.com/watch?v=..." 
+                            required
+                        >
+                    </div>
+                    <div class="button-group">
+                        <button type="submit" class="btn btn-primary">
+                            Submit for Ingestion
+                        </button>
+                        <button type="button" id="clear-btn" class="btn btn-danger">
+                            🗑️ Clear All Videos
+                        </button>
+                    </div>
+                </form>
+
+                <div id="ingest-status" class="status hidden"></div>
+            </section>
+
+            <!-- Query Section -->
+            <section class="card">
+                <h2>💬 Ask Questions</h2>
+                <p class="help-text">Ask questions about the indexed videos</p>
+                
+                <form id="query-form">
+                    <div class="form-group">
+                        <label for="question">Your Question:</label>
+                        <textarea 
+                            id="question" 
+                            rows="3" 
+                            placeholder="What is this video about?"
+                            required
+                        ></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        Ask Question
+                    </button>
+                </form>
+
+                <div id="query-status" class="status hidden"></div>
+
+                <!-- Answer Display -->
+                <div id="answer-container" class="hidden">
+                    <div class="answer-section">
+                        <h3>Answer:</h3>
+                        <p id="answer-text" class="answer-text"></p>
+                    </div>
+
+                    <div class="sources-section">
+                        <h3>Sources:</h3>
+                        <div id="sources-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Info Section -->
+            <section class="info-card">
+                <h3>ℹ️ How It Works</h3>
+                <ol>
+                    <li><strong>Submit</strong> a YouTube URL to index its transcript</li>
+                    <li><strong>Wait</strong> ~30 seconds for processing (transcript extraction, embedding, indexing)</li>
+                    <li><strong>Ask</strong> questions about the video content</li>
+                    <li><strong>Receive</strong> AI-generated answers with source citations</li>
+                </ol>
+                <p class="tech-note">
+                    Powered by Amazon Bedrock Knowledge Bases with S3 Vectors
+                </p>
+            </section>
+        </main>
+
+        <footer>
+            <p>YouTube Q&A - AI-Powered Video Analysis</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

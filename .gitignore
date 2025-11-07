@@ -1,35 +1,45 @@
-# Working files - not part of deliverable
-/instructions/
-.specstory/
-/docs/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
 
-# Environment and secrets
-.env
-.env.*
-*.pem
-*.key
-credentials.json
-
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
+.cursorindexingignore
+.specstory/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Dependencies
-node_modules/
-__pycache__/
-*.pyc
-.pytest_cache/
-venv/
-env/
-.venv/
+# Secrets
+.env
+*.pem
+*.key
+secrets/
+credentials/
 
-# Build artifacts
-dist/
-build/
-*.egg-info/
+# AWS
+.aws/
+
+# Build artifacts and manual build workspace (keep private)
+manual-oci-build/
+
+# Documentation (keep for private repo)
+docs/
+
+# Project management and preparation files (private)
+instructions/
+PREPARE_FOR_PUBLIC.md
+RELEASE_SUMMARY.md
+
+# Logs
+*.log

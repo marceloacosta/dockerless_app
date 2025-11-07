@@ -3,19 +3,18 @@
 Ingestor Service - YouTube Q&A App
 
 Processes YouTube URLs from SQS queue:
-1. Fetches transcript (youtube-transcript-api or yt-dlp + Transcribe)
-2. Chunks text into ~1000 token segments with overlap
-3. Generates embeddings using Amazon Bedrock Titan
-4. Stores vectors in Amazon S3 Vectors
+1. Fetches transcript using youtube-transcript-api
+2. Uploads transcript to S3 as plain text document
+3. Triggers Bedrock Knowledge Base sync to generate embeddings
+4. Embeddings stored in S3 Vectors via Bedrock KB
 
 Environment Variables:
 - AWS_REGION: AWS region (default: us-east-1)
 - SQS_QUEUE_URL: URL of the SQS queue for ingestion jobs
-- BEDROCK_EMBED_MODEL: Embedding model ID (default: amazon.titan-embed-text-v1)
-- S3_VECTORS_BUCKET: S3 bucket for vector storage
-- S3_VECTORS_INDEX: Vector index name
+- KB_BUCKET: S3 bucket for transcript documents (default: YOUR-KB-BUCKET)
+- KB_ID: Bedrock Knowledge Base ID
+- KB_DATA_SOURCE_ID: Knowledge Base Data Source ID
 """
-
 import os
 import sys
 import signal
@@ -105,20 +104,26 @@ def fetch_transcript(video_url):
         # Create API instance
         api = YouTubeTranscriptApi()
         
-        # Fetch transcript list (prefers English, falls back to available languages)
+        # Fetch transcript list
         transcript_list = api.list(video_id)
         
-        # Try to get English transcript first
+        # Try to get English transcript first (preferred)
         try:
             transcript = transcript_list.find_transcript(['en'])
             transcript_data = transcript.fetch()
             logger.info(f"Fetched English transcript: {len(transcript_data)} entries")
         except NoTranscriptFound:
-            # Fall back to any available transcript
-            logger.info("No English transcript, using first available")
-            transcript = transcript_list.find_generated_transcript(['en'])
-            transcript_data = transcript.fetch()
-            logger.info(f"Fetched generated transcript: {len(transcript_data)} entries")
+            # Fallback: Get ANY available transcript (any language)
+            # Bedrock's LLM can handle multilingual content
+            logger.info("No English transcript found, fetching first available transcript...")
+            available = transcript_list._manually_created_transcripts or transcript_list._generated_transcripts
+            if available:
+                first_transcript = list(available.values())[0]
+                transcript_data = first_transcript.fetch()
+                language = first_transcript.language
+                logger.info(f"Fetched transcript in {language}: {len(transcript_data)} entries (LLM will handle language)")
+            else:
+                raise NoTranscriptFound("No transcripts available for this video")
         
         return transcript_data
         
@@ -136,7 +141,88 @@ def fetch_transcript(video_url):
         raise
 
 
-def process_message(message_body):
+def format_transcript_document(video_id, video_url, transcript_data):
+    """
+    Format transcript data as a plain text document with metadata.
+    
+    Args:
+        video_id: YouTube video ID
+        video_url: Full YouTube URL
+        transcript_data: List of transcript entries
+    
+    Returns:
+        str: Formatted document text
+    """
+    # Build document with metadata header
+    lines = [
+        f"Video ID: {video_id}",
+        f"URL: {video_url}",
+        "",
+        "=== TRANSCRIPT ===",
+        ""
+    ]
+    
+    # Add transcript text with timestamps
+    for entry in transcript_data:
+        timestamp = int(entry.start)
+        minutes = timestamp // 60
+        seconds = timestamp % 60
+        lines.append(f"[{minutes:02d}:{seconds:02d}] {entry.text}")
+    
+    return '\n'.join(lines)
+
+
+def upload_to_s3_and_sync(video_id, video_url, transcript_data, s3_client, bedrock_agent_client, kb_bucket, kb_id, kb_data_source_id):
+    """
+    Upload transcript to S3 and trigger Knowledge Base sync.
+    
+    Args:
+        video_id: YouTube video ID
+        video_url: Full YouTube URL
+        transcript_data: List of transcript entries
+        s3_client: Boto3 S3 client
+        bedrock_agent_client: Boto3 Bedrock Agent client
+        kb_bucket: S3 bucket name for transcripts
+        kb_id: Knowledge Base ID
+        kb_data_source_id: Data Source ID
+    
+    Returns:
+        str: Ingestion job ID
+        
+    Raises:
+        ClientError: If S3 upload or KB sync fails
+    """
+    # Format transcript as text document
+    document_text = format_transcript_document(video_id, video_url, transcript_data)
+    
+    # S3 key: {video_id}.txt
+    s3_key = f"{video_id}.txt"
+    
+    logger.info(f"Uploading transcript to s3://{kb_bucket}/{s3_key}")
+    
+    # Upload to S3
+    s3_client.put_object(
+        Bucket=kb_bucket,
+        Key=s3_key,
+        Body=document_text.encode('utf-8'),
+        ContentType='text/plain'
+    )
+    
+    logger.info(f"Upload successful, triggering Knowledge Base sync")
+    
+    # Trigger Knowledge Base ingestion job
+    response = bedrock_agent_client.start_ingestion_job(
+        knowledgeBaseId=kb_id,
+        dataSourceId=kb_data_source_id
+    )
+    
+    ingestion_job_id = response['ingestionJob']['ingestionJobId']
+    logger.info(f"Ingestion job started: {ingestion_job_id}")
+    
+    return ingestion_job_id
+
+
+def process_message(message_body, s3_client, bedrock_agent_client, kb_bucket, kb_id, kb_data_source_id):
     """
     Process a single ingestion job message.
     
@@ -144,6 +230,11 @@ def process_message(message_body):
         message_body: Parsed JSON message body containing:
             - video_url: YouTube URL to process
             - collection_id: Collection identifier for grouping videos
+        s3_client: Boto3 S3 client
+        bedrock_agent_client: Boto3 Bedrock Agent client
+        kb_bucket: S3 bucket for transcripts
+        kb_id: Knowledge Base ID
+        kb_data_source_id: Data Source ID
     
     Returns:
         bool: True if processing succeeded, False otherwise
@@ -171,9 +262,24 @@ def process_message(message_body):
             logger.error(f"Failed to fetch transcript for {video_url}: {e}")
             return False
         
-        # TODO: Implement text chunking
-        # TODO: Implement embedding generation
-        # TODO: Implement vector storage
+        # Step 2: Upload to S3 and trigger Knowledge Base sync
+        try:
+            video_id = extract_video_id(video_url)
+            ingestion_job_id = upload_to_s3_and_sync(
+                video_id, 
+                video_url, 
+                transcript_data,
+                s3_client,
+                bedrock_agent_client,
+                kb_bucket,
+                kb_id,
+                kb_data_source_id
+            )
+            logger.info(f"Document indexed, ingestion_job_id={ingestion_job_id}")
+            
+        except ClientError as e:
+            logger.error(f"Failed to upload or sync: {e}")
+            return False
         
         logger.info(f"Successfully processed {video_url}")
         return True
@@ -196,20 +302,28 @@ def main():
     # Configuration
     region = os.getenv('AWS_REGION', 'us-east-1')
     queue_url = os.getenv('SQS_QUEUE_URL')
-    embed_model = os.getenv('BEDROCK_EMBED_MODEL', 'amazon.titan-embed-text-v1')
+    kb_bucket = os.getenv('KB_BUCKET', 'YOUR-KB-BUCKET')
+    kb_id = os.getenv('KB_ID')
+    kb_data_source_id = os.getenv('KB_DATA_SOURCE_ID')
     
-    logger.info(f"Configuration: region={region}, embed_model={embed_model}")
+    logger.info(f"Configuration: region={region}, kb_bucket={kb_bucket}")
     
     if not queue_url:
         logger.error("SQS_QUEUE_URL environment variable is required")
         sys.exit(1)
     
-    # Initialize SQS client
+    if not kb_id or not kb_data_source_id:
+        logger.error("KB_ID and KB_DATA_SOURCE_ID environment variables are required")
+        sys.exit(1)
+    
+    # Initialize AWS clients
     try:
         sqs = boto3.client('sqs', region_name=region)
-        logger.info("SQS client initialized")
+        s3 = boto3.client('s3', region_name=region)
+        bedrock_agent = boto3.client('bedrock-agent', region_name=region)
+        logger.info("AWS clients initialized (SQS, S3, Bedrock Agent)")
     except Exception as e:
-        logger.error(f"Failed to initialize SQS client: {e}")
+        logger.error(f"Failed to initialize AWS clients: {e}")
         sys.exit(1)
     
     logger.info(f"Polling SQS queue: {queue_url}")
@@ -243,7 +357,7 @@ def main():
                     body = json.loads(message['Body'])
                     
                     # Process the message
-                    success = process_message(body)
+                    success = process_message(body, s3, bedrock_agent, kb_bucket, kb_id, kb_data_source_id)
                     
                     if success:
                         # Delete message from queue
