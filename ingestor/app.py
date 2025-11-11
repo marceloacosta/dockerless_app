@@ -11,7 +11,7 @@ Processes YouTube URLs from SQS queue:
 Environment Variables:
 - AWS_REGION: AWS region (default: us-east-1)
 - SQS_QUEUE_URL: URL of the SQS queue for ingestion jobs
-- KB_BUCKET: S3 bucket for transcript documents (default: YOUR-KB-BUCKET)
+- KB_BUCKET: S3 bucket for transcript documents (required)
 - KB_ID: Bedrock Knowledge Base ID
 - KB_DATA_SOURCE_ID: Knowledge Base Data Source ID
 """
@@ -302,7 +302,10 @@ def main():
     # Configuration
     region = os.getenv('AWS_REGION', 'us-east-1')
     queue_url = os.getenv('SQS_QUEUE_URL')
-    kb_bucket = os.getenv('KB_BUCKET', 'YOUR-KB-BUCKET')
+    kb_bucket = os.getenv('KB_BUCKET')
+    if not kb_bucket:
+        logger.error("KB_BUCKET environment variable is required")
+        sys.exit(1)
     kb_id = os.getenv('KB_ID')
     kb_data_source_id = os.getenv('KB_DATA_SOURCE_ID')
     

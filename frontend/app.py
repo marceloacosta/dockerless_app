@@ -204,7 +204,10 @@ def clear_videos():
     }
     """
     # Configuration for KB
-    kb_bucket = os.getenv('KB_BUCKET', 'YOUR-KB-BUCKET')
+    kb_bucket = os.getenv('KB_BUCKET')
+    if not kb_bucket:
+        logger.error("KB_BUCKET environment variable is required")
+        return jsonify({"success": False, "error": "KB_BUCKET not configured"}), 500
     kb_id = os.getenv('KB_ID')
     kb_data_source_id = os.getenv('KB_DATA_SOURCE_ID')
     
